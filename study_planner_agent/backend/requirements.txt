@@ -1,0 +1,16 @@
+google-adk
+python-dotenv
+langchain-text-splitters
+pypdf
+google-api-python-client 
+fastapi
+uvicorn
+firebase-admin
+google-generativeai
+google-auth
+google-auth-oauthlib
+chromadb
+sentence-transformers==2.2.2
+huggingface_hub==0.16.4
+deprecated
+
