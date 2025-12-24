@@ -23,7 +23,28 @@ class SimpleAgent:
             
             # Generate response using Gemini
             response = self.model.generate_content(full_prompt)
-            return response.text
+            response_text = response.text.strip()
+            
+            # Clean up JSON formatting for non-tutor agents
+            if self.name != "TutorAgent":
+                # Remove markdown formatting if present
+                if response_text.startswith('```json'):
+                    response_text = response_text.replace('```json', '').replace('```', '').strip()
+                elif response_text.startswith('```'):
+                    response_text = response_text.replace('```', '').strip()
+                
+                # Validate JSON for non-tutor agents
+                try:
+                    json.loads(response_text)
+                except json.JSONDecodeError:
+                    # If JSON is invalid, wrap in error format
+                    return json.dumps({
+                        "error": "Invalid JSON response from agent",
+                        "agent": self.name,
+                        "raw_response": response_text[:500] + "..." if len(response_text) > 500 else response_text
+                    })
+            
+            return response_text
         except Exception as e:
             return json.dumps({"error": str(e), "agent": self.name})
 
@@ -121,48 +142,103 @@ class AgenticOrchestrator:
     
     def plan_study(self, payload):
         """Human-initiated study planning with agentic follow-up and calendar integration"""
-        # Initial plan creation
-        plan = study_planner_agent.run(json.dumps(payload))
-        
-        # Store in blackboard for autonomous agents to monitor
-        blackboard.shared_context["current_study_plan"] = plan
-        blackboard.post_event("new_study_plan_created", payload, "human")
-        
-        # Task manager processes the plan
-        tasks = task_manager_agent.run(plan)
-        blackboard.shared_context["current_tasks"] = tasks
-        
-        # Automatically create calendar events from the study plan
         try:
-            calendar_result = create_calendar_events_from_study_plan(tasks)
-            blackboard.shared_context["calendar_events"] = calendar_result
+            # Initial plan creation
+            plan_response = study_planner_agent.run(json.dumps(payload))
             
-            # Format the study plan as a table for better display
-            formatted_plan = format_study_plan_as_table(tasks)
+            # Parse the JSON response
+            try:
+                plan_data = json.loads(plan_response)
+            except json.JSONDecodeError:
+                # Fallback if JSON parsing fails
+                plan_data = {
+                    "daily_study_plan": [],
+                    "general_reminders": [],
+                    "error": "Failed to parse study plan JSON",
+                    "raw_response": plan_response[:500] + "..." if len(plan_response) > 500 else plan_response
+                }
             
-            return {
-                "study_plan": tasks,
-                "calendar_integration": calendar_result,
-                "formatted_schedule": formatted_plan,
-                "autonomous_monitoring": "enabled"
-            }
+            # Store in blackboard for autonomous agents to monitor
+            blackboard.shared_context["current_study_plan"] = plan_data
+            blackboard.post_event("new_study_plan_created", payload, "human")
+            
+            # Task manager processes the plan
+            tasks_response = task_manager_agent.run(json.dumps(plan_data))
+            try:
+                tasks_data = json.loads(tasks_response)
+            except json.JSONDecodeError:
+                tasks_data = plan_data  # Use original plan if task manager fails
+            
+            blackboard.shared_context["current_tasks"] = tasks_data
+            
+            # Automatically create calendar events from the study plan
+            try:
+                calendar_result = create_calendar_events_from_study_plan(plan_data)
+                blackboard.shared_context["calendar_events"] = calendar_result
+                
+                # Format the study plan as a table for better display
+                formatted_plan = format_study_plan_as_table(plan_data)
+                
+                return {
+                    "success": True,
+                    "plan": json.dumps(plan_data),  # Keep as string for compatibility
+                    "study_plan": plan_data,  # Also provide as object
+                    "calendar_events": calendar_result,
+                    "formatted_schedule": formatted_plan,
+                    "autonomous_monitoring": "enabled",
+                    "message": "Study plan created with calendar integration and autonomous monitoring!"
+                }
+            except Exception as e:
+                # If calendar integration fails, still return the plan
+                return {
+                    "success": True,
+                    "plan": json.dumps(plan_data),
+                    "study_plan": plan_data,
+                    "calendar_integration": {"status": "error", "message": str(e)},
+                    "formatted_schedule": {"status": "error", "message": "Failed to format schedule"},
+                    "autonomous_monitoring": "enabled",
+                    "error": f"Calendar integration failed: {str(e)}"
+                }
         except Exception as e:
-            # If calendar integration fails, still return the plan
             return {
-                "study_plan": tasks,
-                "calendar_integration": {"status": "error", "message": str(e)},
-                "formatted_schedule": {"status": "error", "message": "Failed to format schedule"},
-                "autonomous_monitoring": "enabled"
+                "success": False,
+                "error": f"Study plan creation failed: {str(e)}",
+                "plan": json.dumps({"error": str(e)}),
+                "autonomous_monitoring": "error"
             }
 
     def upload_notes(self, payload):
-        """Knowledge ingestion with autonomous processing"""
-        result = knowledge_agent.run(json.dumps(payload))
-        
-        # Notify autonomous agents about new knowledge
-        blackboard.post_event("new_knowledge_added", payload, "human")
-        
-        return result
+        """Knowledge ingestion with autonomous processing and enhanced RAG integration"""
+        try:
+            # Process notes with enhanced tools first
+            from enhanced_tools import process_uploaded_notes
+            
+            enhanced_result = process_uploaded_notes(payload)
+            
+            # Also use the knowledge agent for additional processing
+            agent_result = knowledge_agent.run(json.dumps(payload))
+            
+            # Try to parse agent result as JSON
+            try:
+                agent_data = json.loads(agent_result)
+            except json.JSONDecodeError:
+                agent_data = {"raw_response": agent_result}
+            
+            # Notify autonomous agents about new knowledge
+            blackboard.post_event("new_knowledge_added", payload, "human")
+            
+            return {
+                "success": True,
+                "enhanced_processing": enhanced_result,
+                "agent_processing": agent_data,
+                "message": "Notes processed and added to knowledge base successfully!"
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Notes processing failed: {str(e)}",
+                "message": "Failed to process notes"
+            }
 
     def ask_doubt(self, payload):
         """On-demand tutoring with natural language responses only"""

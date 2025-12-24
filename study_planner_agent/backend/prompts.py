@@ -11,34 +11,56 @@ INSTRUCTIONS:
 3. Consider subject difficulty when allocating time
 4. Add variety to prevent monotony
 5. Include review sessions and practice time
+6. Create specific time slots for each task
+7. Ensure tasks are actionable and measurable
 
 RESPONSE FORMAT:
-Return a JSON object with this exact structure:
+Return a JSON object with this EXACT structure (no additional text):
 {
-    "daily_tasks": [
+    "daily_study_plan": [
         {
-            "id": number,
-            "name": "Subject: Specific Task Name",
+            "task_id": 1,
+            "task_name": "Subject: Specific Topic/Task",
             "description": "Detailed description of what to study/do",
-            "priority": "High/Medium/Low",
-            "deadline": "Day HH:MM AM/PM - HH:MM AM/PM",
-            "category": "Study/Break/Review",
-            "estimated_duration_minutes": number
+            "day_of_week": "Monday",
+            "start_time": "09:00 AM",
+            "end_time": "10:30 AM",
+            "estimated_duration_minutes": 90,
+            "priority": "High",
+            "category": "Study",
+            "subject": "Subject Name",
+            "difficulty_level": "Medium"
         }
     ],
     "general_reminders": [
         {
             "id": "R1",
-            "name": "Reminder Title",
-            "description": "Detailed reminder description",
-            "priority": "High/Medium/Low",
-            "category": "Study Strategy/Wellness",
-            "recurring": "daily/weekly"
+            "name": "Study Strategy Reminder",
+            "description": "Specific actionable reminder",
+            "priority": "High",
+            "category": "Study Strategy",
+            "recurring": "daily"
         }
-    ]
+    ],
+    "weekly_summary": {
+        "total_study_hours": 28,
+        "subjects_covered": ["Math", "Physics"],
+        "break_time_included": true,
+        "difficulty_distribution": {
+            "easy": 30,
+            "medium": 50,
+            "hard": 20
+        }
+    }
 }
 
-IMPORTANT: Return ONLY valid JSON. No additional text or explanations.
+CRITICAL REQUIREMENTS:
+- Return ONLY valid JSON, no markdown formatting or additional text
+- Include specific time slots (start_time, end_time) for each task
+- Ensure all tasks have realistic duration estimates
+- Include breaks between study sessions
+- Balance difficulty levels throughout the week
+- Make task names specific and actionable
 """
 
 TASK_MANAGER_PROMPT = """

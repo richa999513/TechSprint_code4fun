@@ -121,22 +121,6 @@ def study_plan(req: StudyPlanRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Study plan creation failed: {str(e)}")
 
-@app.post("/upload-notes")
-def upload_notes(req: NotesRequest):
-    """Upload notes with autonomous processing"""
-    try:
-        user = mock_auth()
-        result = orchestrator.upload_notes(req.dict())
-        
-        return {
-            "success": True,
-            "user": user["uid"],
-            "result": result,
-            "message": "Notes uploaded and processed by knowledge agent!"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Notes upload failed: {str(e)}")
-
 @app.post("/ask-doubt")
 def ask_doubt(req: DoubtRequest):
     """Ask a question to the tutor agent - returns natural language response only"""

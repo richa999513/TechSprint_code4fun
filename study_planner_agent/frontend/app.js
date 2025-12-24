@@ -19,6 +19,9 @@ let sessionData = {
     systemStatus: null
 };
 
+// Development mode - skip Firebase for now
+const isDevelopmentMode = true;
+
 // Firebase Configuration (for production)
 const firebaseConfig = {
     apiKey: "AIzaSyC7VmUsGSk6X6tXmbd2JnN3UqmS4arSPvY",
@@ -180,20 +183,25 @@ async function handleLogin(e) {
         // Clear any existing session data
         clearSessionData();
         
-        // For demo, we'll simulate login
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        currentUser = {
-            email: email,
-            name: email.split('@')[0],
-            uid: 'user_' + Date.now(),
-            isDemo: false
-        };
-        
-        isDemo = false;
-        
-        showMainApp();
-        showNotification('Welcome back!', 'success');
+        if (isDevelopmentMode) {
+            // Development mode - skip Firebase authentication
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            currentUser = {
+                email: email,
+                name: email.split('@')[0],
+                uid: 'dev_user_' + Date.now(),
+                isDemo: false
+            };
+            
+            isDemo = false;
+            
+            showMainApp();
+            showNotification('Welcome! (Development Mode)', 'success');
+        } else {
+            // Production Firebase authentication would go here
+            throw new Error('Firebase authentication not configured for production');
+        }
         
     } catch (error) {
         showNotification('Login failed: ' + error.message, 'error');

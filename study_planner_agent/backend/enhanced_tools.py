@@ -633,9 +633,17 @@ def generate_questions_from_notes(notes_data: Dict[str, Any]) -> Dict[str, Any]:
         content = notes_data.get("content", "")
         question_type = notes_data.get("type", "mixed")  # mixed, mcq, short_answer, essay
         num_questions = notes_data.get("num_questions", 5)
+        upload_method = notes_data.get("upload_method", "text")
+        file_type = notes_data.get("file_type", "text/plain")
         
         if not content.strip():
             return {"status": "error", "message": "No content provided"}
+        
+        # Handle file content processing
+        processed_content = content
+        if upload_method == "file" and file_type == "application/pdf":
+            # Content is already processed by process_uploaded_notes
+            processed_content = content
         
         # Use Gemini to generate questions
         import google.generativeai as genai
@@ -646,56 +654,119 @@ def generate_questions_from_notes(notes_data: Dict[str, Any]) -> Dict[str, Any]:
         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
         model = genai.GenerativeModel("gemini-2.5-flash")
         
+        # Create a more specific prompt based on question type
+        if question_type == "mcq":
+            type_instruction = "Generate multiple choice questions with 4 options each (A, B, C, D). Mark the correct answer clearly."
+        elif question_type == "short_answer":
+            type_instruction = "Generate short answer questions that can be answered in 2-3 sentences."
+        elif question_type == "essay":
+            type_instruction = "Generate essay questions that require detailed explanations and analysis."
+        else:
+            type_instruction = "Generate a mix of question types including multiple choice, short answer, and essay questions."
+        
         prompt = f"""
-        Based on the following study notes, generate {num_questions} {question_type} questions for study and review.
+        Based on the following study notes, generate {num_questions} high-quality study questions.
         
-        Notes Content:
-        {content[:2000]}  # Limit content to avoid token limits
+        Content to analyze:
+        {processed_content[:3000]}  # Limit content to avoid token limits
         
-        Requirements:
-        - Generate questions that test understanding of key concepts
+        Instructions:
+        - {type_instruction}
         - Include a mix of difficulty levels (easy, medium, hard)
-        - For MCQ questions, provide 4 options with correct answer marked
-        - For short answer questions, provide sample answers
-        - Format as JSON with this structure:
+        - Focus on key concepts and important details
+        - Make questions clear and unambiguous
+        - For MCQ questions, provide 4 options with one clearly correct answer
+        - Include explanations for correct answers
+        
+        Return your response as a JSON object with this exact structure:
         {{
             "questions": [
                 {{
                     "id": 1,
                     "type": "mcq|short_answer|essay",
                     "difficulty": "easy|medium|hard",
-                    "question": "Question text",
-                    "options": ["A", "B", "C", "D"] (for MCQ only),
-                    "correct_answer": "A" (for MCQ) or "Sample answer text",
-                    "explanation": "Why this is the correct answer"
+                    "question": "Clear question text here",
+                    "options": ["Option A", "Option B", "Option C", "Option D"],
+                    "correct_answer": "A",
+                    "explanation": "Detailed explanation of why this is correct"
                 }}
             ]
         }}
+        
+        IMPORTANT: Return ONLY valid JSON. No additional text or formatting.
         """
         
         response = model.generate_content(prompt)
+        response_text = response.text.strip()
+        
+        # Clean up the response to ensure it's valid JSON
+        if response_text.startswith('```json'):
+            response_text = response_text.replace('```json', '').replace('```', '').strip()
+        elif response_text.startswith('```'):
+            response_text = response_text.replace('```', '').strip()
         
         # Parse the response
         try:
-            questions_data = json.loads(response.text)
+            questions_data = json.loads(response_text)
+            questions = questions_data.get("questions", [])
+            
+            # Validate and clean up questions
+            validated_questions = []
+            for i, q in enumerate(questions):
+                validated_q = {
+                    "id": i + 1,
+                    "type": q.get("type", question_type),
+                    "difficulty": q.get("difficulty", "medium"),
+                    "question": q.get("question", f"Question {i+1}"),
+                    "explanation": q.get("explanation", "No explanation provided")
+                }
+                
+                # Add options for MCQ questions
+                if q.get("type") == "mcq" or question_type == "mcq":
+                    validated_q["options"] = q.get("options", ["Option A", "Option B", "Option C", "Option D"])
+                    validated_q["correct_answer"] = q.get("correct_answer", "A")
+                else:
+                    validated_q["correct_answer"] = q.get("correct_answer", "Sample answer not provided")
+                
+                validated_questions.append(validated_q)
+            
             return {
                 "status": "success",
-                "questions": questions_data.get("questions", []),
-                "total_generated": len(questions_data.get("questions", [])),
-                "type": question_type
+                "questions": validated_questions,
+                "total_generated": len(validated_questions),
+                "type": question_type,
+                "source_content_length": len(processed_content)
             }
-        except json.JSONDecodeError:
-            # If JSON parsing fails, return the raw response
+            
+        except json.JSONDecodeError as e:
+            # If JSON parsing fails, try to extract questions from text
+            print(f"JSON parsing failed: {e}")
+            print(f"Response text: {response_text[:500]}...")
+            
+            # Return a fallback response
             return {
                 "status": "partial_success",
-                "raw_response": response.text,
+                "questions": [{
+                    "id": 1,
+                    "type": question_type,
+                    "difficulty": "medium",
+                    "question": "Based on the uploaded content, what are the key concepts you should focus on?",
+                    "correct_answer": "Review the main topics and create your own study notes",
+                    "explanation": "This is a general question generated due to processing issues with the AI response"
+                }],
+                "total_generated": 1,
+                "type": question_type,
+                "raw_response": response_text[:500] + "..." if len(response_text) > 500 else response_text,
                 "message": "Questions generated but formatting may need adjustment"
             }
         
     except Exception as e:
+        print(f"Error in generate_questions_from_notes: {e}")
         return {
             "status": "error",
-            "message": f"Failed to generate questions: {str(e)}"
+            "message": f"Failed to generate questions: {str(e)}",
+            "questions": [],
+            "total_generated": 0
         }
 
 def generate_mcqs_from_notes(notes_data: Dict[str, Any]) -> Dict[str, Any]:
